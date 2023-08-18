@@ -1,0 +1,389 @@
+---
+title: "Análisis para Bellabeat"
+author: "Isabel Colorado López"
+date: "2023-08-16"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+## A cerca de la empresa
+
+Es una empresa de alta tecnología que fabrica productos inteligentes focalizados en el cuidado de la salud. Recopila datos sobre la actividad física, el sueño, el estrés y la salud reproductiva le ha permitido a Bellabeat proporcionar a las mujeres conocimientos sobre su propia salud y sus hábitos. Desde su fundación, en 2013, Bellabeat creció a un ritmo vertiginoso y rápidamente se posicionó como empresa de bienestar impulsada por la tecnología para las mujeres. 
+
+
+## Preguntas para el analisis
+
+* ¿Cuáles son algunas tendencias de uso de los dispositivos inteligentes? 
+
+* ¿Cómo se podrían aplicar estas tendencias a los clientes de Bellabeat? 
+
+* ¿Cómo podrían ayudar estas tendencias a influir en la estrategia de marketing de Bellabeat? 
+
+
+## Tarea empresarial
+
+Identificar patrones y tendencias entre los datos de usuarios que utilizan dispositivos inteligentes que no son de Bellabeat, para ayudar a la estrategia de marketing y al crecimiento de la empresa.
+
+## Los datos
+
+La fuente de los datos utilizados para este analisis son:
+
+* [Datos de seguimiento de actividad física de Fitbit](https://www.kaggle.com/datasets/arashnic/fitbit) (CC0: Dominio público, conjunto de datos disponibles a través de [Mobius](https://www.kaggle.com/arashnic)): Este conjunto de datos de Kaggle contiene el seguimiento de la actividad física personal en treinta usuarios de Fitbit. Treinta usuarios elegibles de Fitbit prestaron su consentimiento para el envío de datos personales de seguimiento que incluyen rendimiento de la actividad física en minutos, ritmo cardíaco y monitoreo del sueño. Incluye información sobre la actividad diaria, pasos y ritmo cardíaco que se puede usar para explorar los hábitos de los usuarios. En el año de 2016
+
+* Un [Estudio](https://pubmed.ncbi.nlm.nih.gov/14715035/) realizado por la Universidad del Estado de Arizona, Estados Unidos, establece una escala de cuántos pasos se necesitan dar al día.
+
+* Esta [página](https://www.sanitas.es/biblioteca-de-salud/prevencion-salud/sueno-y-cansancio/horas-necesarias-dormir) contiene las horas recomendadas de sueño por edad.
+
+
+## Análisis
+
+Las bases de datos utilizadas las limpié con google sheets antes de subirlas a R. Al explorar por los datos me di cuenta que el formato de las fechas me las reconocía como caracteres, y al usar la función de cambiar formato no tuve éxito, por lo que utlicé una función llamada `FECHA` y pude corregir el error. También quité nulls y duplicados si existiesen, al igual que verifiqué si había algún tipo de sesgo en los datos.
+Después de que todo estaba correcto, los cargué a R.
+
+## Códigos de análisis en R
+
+Lo primero que hice fue cargar los archivos y los paquetes que iba a necesitar para mi análisis.
+
+### 1. Daily activity
+
+```{r load daily activity, warning=FALSE}
+DailyActivity <- read.csv("C:\\Users\\isabe\\Downloads\\dailyActivity_merged.csv")
+```
+
+
+### 2. Sleep Day
+
+```{r load sleep day, warning=FALSE}
+sleepDay <- read.csv("C:\\Users\\isabe\\Downloads\\sleepDay_merged.csv") 
+```
+
+
+### 3. Hourly Steps
+
+```{r load hourly steps, warning=FALSE}
+hourlySteps <- read.csv("C:\\Users\\isabe\\Downloads\\hourlySteps_merged.csv")
+```
+
+
+### Paquetes necesarios para el análisis
+
+```{r load packages, warning=FALSE}
+library(tidyverse)
+library(dplyr)
+library(rstatix)
+library(ggplot2)
+
+```
+
+## Limpieza de los datos
+
+Al explorar estos datos en R me dí cuenta que el formato de fecha y hora lo renocía como caracteres, a pesar de haber cambiado el formato en las hojas de cálculo, por lo que cambié. También, los usuarios que están escritos como números (Id's), estaban en formato _integer_, entonces los cambié a formato _character_ para que mi análisis fuera basados en ellos.
+
+```{r tidy up daily activity, warning=FALSE}
+DailyActivity$Id= as.character(DailyActivity$Id)
+DailyActivity$ActivityDate=as.POSIXct(DailyActivity$ActivityDate,
+                                      format = "%d/%m/%y",tz=Sys.timezone())
+```
+
+Hice lo mismo con los otros dos archivos que presentaban el mismo problema de formato. Y al archivo que contenía formato _fecha-hora_ también le apliqué el cambio.
+
+
+```{r tidy up sleep day, warning=FALSE}
+sleepDay$Id=as.character(sleepDay$Id)
+sleepDay$SleepDay=as.POSIXct(sleepDay$SleepDay,
+                             format= "%m/%d/%y")
+```
+
+
+Con los datos de _hourlySteps_ separé la fecha y la hora en columnas distintas para poder facilitar mi análisis. También cambié el formato de 12hrs al de 24hrs para facilitar las visualizaciones.
+
+
+```{r tidy up hourly steps, warning=FALSE}
+hourlySteps$Id=as.character(hourlySteps$Id)
+hourlySteps$ActivityHour=as.POSIXct(hourlySteps$ActivityHour, 
+                                    format ="%m/%d/%Y %H:%M:%S")
+hourlySteps$fecha <- date(hourlySteps$ActivityHour)
+hourlySteps$hora <- format(hourlySteps$ActivityHour, 
+                           format= "%H:%M:%S")
+hourlySteps<- separate(hourlySteps,col = ActivityHour,
+                       into = c("fecha","hora","pmoam"),sep = " ")
+hourlySteps<- unite(hourlySteps,
+                    "hora","pmoam",col="Hora",sep = ":",remove = FALSE)
+```
+
+```{r case, include=FALSE}
+hourlyStepsV2 <- hourlySteps %>% 
+  select(Id,fecha,Hora,StepTotal) %>% 
+  mutate(HoraMilitar=case_when(Hora %in% ("12:00:00:AM")~"00:00",
+                               Hora %in% ("1:00:00:AM")~ "1:00",
+                               Hora %in% ("2:00:00:AM")~"2:00",
+                               Hora %in% ("3:00:00:AM")~"3:00",
+                               Hora %in% ("4:00:00:AM")~"4:00",
+                               Hora %in% ("5:00:00:AM")~"5:00",
+                               Hora %in% ("6:00:00:AM")~"6:00",
+                               Hora %in% ("7:00:00:AM")~"7:00",
+                               Hora%in% ("8:00:00:AM")~"8:00",
+                               Hora%in% ("9:00:00:AM")~"9:00",
+                               Hora%in% ("10:00:00:AM")~"10:00",
+                               Hora%in% ("11:00:00:AM")~"11:00",
+                               Hora%in% ("12:00:00:PM")~"12:00",
+                               Hora%in% ("1:00:00:PM")~"13:00",
+                               Hora%in% ("2:00:00:PM")~"14:00",
+                               Hora%in% ("3:00:00:PM")~"15:00",
+                               Hora%in% ("4:00:00:PM")~"16:00",
+                               Hora%in% ("5:00:00:PM")~"17:00",
+                               Hora%in% ("6:00:00:PM")~"18:00",
+                               Hora%in% ("7:00:00-PM")~"19:00",
+                               Hora%in% ("8:00:00:PM")~"20:00",
+                               Hora%in% ("9:00:00:PM")~"21:00",
+                               Hora%in% ("10:00:00:PM")~"22:00",
+                               Hora%in% ("11:00:00:PM")~"23:00"))
+```
+
+## Análisis
+
+Primero revisé la cantidad de usuarios que participaron en cada estudio.
+
+```{r check amout of users, warning=FALSE}
+count(distinct(DailyActivity,Id))
+count(distinct(sleepDay, Id))
+count(distinct(hourlySteps,Id))
+```
+
+
+Luego creé un nuevo marco de datos con la suma de todos los tiempos de los tipos de actividad para tener el *total*. Esto me ayudará más adelante en mi análisis.
+
+```{r}
+DailyActivityV2 <- DailyActivity %>% 
+  mutate(TotalActivity=VeryActiveMinutes+FairlyActiveMinutes+
+           LightlyActiveMinutes)
+```
+
+
+
+## Hallazgos que los datos mostraron
+
+Para adultos sanos, caminar menos de 5.000 pasos diarios es equivalente a un estilo de vida sedentario.
+
+* Si se dan entre 5.000 y 7.500 pasos diarios determina una actividad baja/moderada.
+* Entre 7.500 y 10.000 pasos diarios equivale a un estilo algo activo.
+* Una persona tiene una vida activa cuando supera los 10.000 pasos.
+
+Por lo tanto, andar más siempre es una buena idea. Así lo demuestra este estudio que observó cómo las tasas de mortalidad disminuyeron progresivamente antes de nivelarse aproximadamente a los 7.500 pasos/día.
+
+Al crear un resumen de los datos me dí cuenta que el promedio de pasos entre los usuarios es de 7671, lo que quiere decir que las personas que participaron en este estudio son medianamente activas.
+
+También se muestra que el promedio de la cantidad en minutos de sedentarismo es mayor sobre la cantidad de actividad total (989/228), lo cual quiere decir que los usuarios deberían ser más activos para tener una vida más saludable.
+
+
+
+```{r summary daily activity, warning=FALSE}
+DailyActivityV2 %>% select(TotalSteps,SedentaryMinutes,
+                           TotalActivity) %>% summary()
+```
+
+```{r summary sleep day}
+sleepDay %>% select(TotalMinutesAsleep,TotalTimeInBed) %>% 
+  summary()
+```
+
+```{r summary hourly steps}
+hourlySteps %>% group_by(hora) %>% 
+  select(StepTotal) %>% summary()
+```
+
+
+
+### Creé un nuevo marco de datos para resumir el promedio de cada variable por usuario y poder visualizar mejor las tendencias de los datos
+
+
+```{r new data frame 1}
+promedioTotalA<-DailyActivityV2 %>% group_by(Id) %>% 
+  summarise_all(mean)
+```
+
+
+Al crear el nuevo marco de datos me encuentro que los valores que me interesan, son decimales, por lo que decido cambiarlos a número enteros.
+
+
+```{r new data frame 2}
+promedioTotalAV2<-promedioTotalA %>% 
+  mutate(RoundSteps=as.integer(round(TotalSteps)))
+```
+
+
+### Nivel de actividad por usuario
+
+Después de saber lo que se considera activo, moderado o sendentario en cuanto a pasos diarios, lo que hice fue clasificar los usuarios según su nivel de actividad, para así poder tener una idea más clara de qué tan activos son estas personas.
+
+```{r new data frame 3, echo=FALSE, warning=FALSE}
+promedioTotalAV3 <-promedioTotalAV2 %>% 
+  select(Id,ActivityDate, TotalSteps,TrackerDistance,
+         Calories,TotalActivity,SedentaryMinutes,RoundSteps) %>% 
+  mutate(activityLevel=case_when(RoundSteps<=5000 ~"baja",
+                                 RoundSteps>5000& RoundSteps<=7500 ~"moderado",
+                                 TRUE ~ "activo"))
+```
+ 
+ 
+
+## Visualizaciones de los datos 
+
+Primero creé un diagrama de dispersión para ver la relación que hay entre el promedio de pasos totales por persona y el promedio de actividad. Me encontré que hay una correlación positiva del 0.7, lo que quiere decir que mientras más pasos se da, hay mayor nivel de actividad general.
+Caminar más siempre es mejor.
+
+
+```{r scatterplot StepsVsActivity, echo=FALSE, warning=TRUE}
+ggplot(data=promedioTotalA,mapping = aes(x=TotalSteps,
+                                        y=TotalActivity))+
+  geom_point()+geom_smooth()+
+  labs(title="Relación de actividad & Pasos totales",
+       x="Total Steps",y="Total Activity(min)")+
+  annotate("text", x=12000,y=100,label="Cor 0.7",
+           color="blue",fontface="bold")
+```
+
+
+
+
+Después creé un gráfico de barras para ver qué tan activas son las personas, y se puede ver que la mayoría se clasifican como **activos**.
+Esta clasificación puede ser de gran ayuda para los dispositovos inteligentes, ya que se pueden implementar alertas según el nivel de actividad para ayudarle a las personas a tener un día más activo.
+
+```{r barChart activityLevel, echo=FALSE}
+ggplot(data = promedioTotalAV3)+geom_bar(mapping = 
+                                           aes(x=activityLevel,
+                                           fill=activityLevel))+
+  labs(title = "Activity Level",x="Activity Level",y="Quantity")
+```
+
+
+
+
+Luego de esto hice un gráfico de columnas ya que quería ver el promedio de pasos por hora. Lo que mostraron los datos fue que la hora en donde se realizan más pasos es a las 18:00, puede ser una hora en la que las personas tienen más tiempo para salir a caminar y porque el clima es más fresco, sin embargo si quisiera ahondar más, haría falta otro análisis dedicado específicamente en esto.
+
+```{r include=FALSE}
+PromediohourlyStepsV2 <- hourlyStepsV2 %>% 
+  group_by(Id,HoraMilitar) %>% 
+  summarize(promedioSteps=mean(StepTotal))
+PromediohourlyStepsV2<-
+  mutate(PromediohourlyStepsV2, RoundSteps=as.integer(round(promedioSteps)))
+PromediohourlyStepsV3 <- PromediohourlyStepsV2 %>% drop_na(HoraMilitar)
+```
+
+
+```{r eval=FALSE, include=FALSE}
+ggplot(data = PromediohourlyStepsV3, aes(x=HoraMilitar,y=RoundSteps))+
+  geom_col(fill="#458B74")+theme(axis.text.x = element_text(angle = 45))+
+  labs(title = "Promedio de pasos por hora", x="Hora",y="Promedio de pasos")
+```
+![plot](https://i.imgur.com/K4xS7sd.jpg)
+
+
+
+Seguido a esto quería comprobar que a mayor pasos dados, mayor calorías se gastan durante el día, por medio de un diagrama de dispersión. Esto lo digo porque se puede dar el caso en que no se camine mucho, pero se gasten calorías de otras maneras. Dado a los datos se puede ver que efectivamente existe una correlación positiva.
+
+```{r steps & calories, echo=FALSE}
+ggplot(data = DailyActivityV2, aes(x=TotalSteps,y=Calories))+
+         geom_point(color="#698B22")+geom_smooth()+
+  labs(title = "Relationship between steps and calories",
+       x="Total Steps")+
+  annotate("text",x=30000,y=2000,label="Cor 0.5", color="blue",
+           fontface="bold")
+```
+
+
+
+
+Hice lo mismo pero con las variables **distancia y actividad**.
+El resultado fue que a mayor distancia, mayor actividad general durante el día. Esto quiere decir que la mayoría del tiempo invertido en ejercitarse, corresponde a los pasos dados. Y esto una vez más nos dice que se debe incentivar más a las personas a caminar más, para tener una mejor salud.
+
+```{r scatterplot distance & activity, echo=FALSE}
+ggplot(data = DailyActivityV2, aes(x=TotalDistance,
+                                   y=TotalActivity))+
+         geom_point()+geom_smooth()+
+  labs(title = "Relationship between Distance & Activity")+
+  annotate("text",x=25,y=200,label="Cor 0.7",color="blue",
+           fontface="bold")
+```
+
+```{r include=FALSE}
+ActivityandSleep <- merge(DailyActivityV2,sleepDay,by="Id")
+```
+
+
+
+
+Dado a que ya sabemos que la actividad durante el día se debe en mayor medida a los pasos dados, entonces creé un gráfico que me mostrara la relación que hay entre el sueño y la actividad total. Mi teoría era que si las personas lograban dormir más, iban a tener más energía durante el día, pero los datos mostraron lo contrario. Con una correlación negativa del -0.2, se comprueba que no por dormir más, tienden a tener más actividad.
+
+```{r activity & sleep, echo=FALSE}
+ggplot(data = ActivityandSleep, aes(x=TotalActivity,
+                                    y=TotalMinutesAsleep))+
+   geom_smooth()+
+  labs(title = "Actividad y Sueño total",x="Total Activity",
+       y="Minutes Asleep")+
+  annotate("text",x=300,y=450,label="Cor -0.2",
+           color="blue", fontface="bold")
+```
+
+
+
+
+Otro punto que quise visualizar fue el tiempo en cama de los usuarios y la minutos de sueño. Se puede apreciar bastante claro que la mayoría del tiempo que pasan en su cama es dedicada exclusivamente al sueño, cosa que es realmente positiva.
+
+```{r include=FALSE}
+sleepDayV2 <- sleepDay %>%  
+  mutate(TotalHoursSleep=TotalMinutesAsleep/60)
+```
+
+
+```{r echo=FALSE}
+ggplot(data = sleepDayV2, aes(x=TotalMinutesAsleep,
+                              y=TotalTimeInBed))+geom_point()+
+  geom_smooth()+
+  labs(title = "Relationship between Time in bed and Total minutes asleep",
+       x="Minutes Asleep",y="Time in bed")+
+  annotate("text",x=700,y=500,label="Cor 0.9",color="blue",
+           fontface="bold")
+```
+
+
+```{r message=FALSE, warning=FALSE, include=FALSE}
+sleepDayV2 <- sleepDay %>%  
+  mutate(TotalHoursSleep=TotalMinutesAsleep/60)
+
+sleepDayV2 %>% select(TotalHoursSleep) %>% 
+  summary()
+```
+
+
+Para finalizar, deseaba ver las horas promedio que duermen los usuarios de fitbit,por medio de un gráfico de barras, ya que lo recomendado para adultos y adultos jóvenes es dormir entre 7 y 9hrs. 
+Lo que descubrí fue que el promedio de horas dormidas es de 6.9, lo cual está casi en el rango recomendado. También pude ver que el máximo de horas dormido es de 13hrs, cosa que no es del todo bueno, más no es mejor. Por lo que se debería incentivar a los usuarios a dormir las horas recomendadas, con recordatorios y alarmas.
+
+```{r sleep hours, echo=FALSE}
+ggplot(data = sleepDayV2, aes(x=TotalHoursSleep))+
+  geom_bar(fill="blue")+
+  labs(title = "Number of hours of sleep",
+       x="Hours sleep",y="Quantity")
+```
+
+
+
+## Recomendaciones para Bellabeat
+
+*La mayoría de los usuarios tienden a ser más activos, aunque no todos, es por esto que se debe alentar a los usuarios a tener estilos de vida más saludables, y así tener una mejor vida en general.*
+
+**Por lo que:**
+
+* Mandar alertas cuando se tiene un nivel de actividad bajo o moderado para animar a las personas a caminar más.
+* Enviar notificaciones cuando el usuario haya alcanzado un nivel de más de 10000 diarios, lo cual se considera **muy activo**, esto para premiar la actividad física y promoverla.
+* Implementar un sistema de *vibración* cuando la persona pasa más tiempo sedentaria.
+* Recordatorios de las horas de sueño recomendadas para cada usuario, dependiendo de su edad. Esto ayudaría a que las personas logren mejor calidad de sueño.
+
+
+
+
+
+
+
+
